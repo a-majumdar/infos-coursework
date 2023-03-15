@@ -22,6 +22,12 @@ public:
      * Returns the friendly name of the algorithm, for debugging and selection purposes.
      */
     const char* name() const override { return "mq"; }
+    
+    List<SchedulingEntity *> runqueue;
+    List<SchedulingEntity *> realtime;
+    List<SchedulingEntity *> interactive;
+    List<SchedulingEntity *> normal;
+    List<SchedulingEntity *> daemon;
 
     /**
      * Called during scheduler initialisation.
@@ -29,6 +35,7 @@ public:
     void init()
     {
         // TODO: Implement me!
+
     }
 
     /**
@@ -38,6 +45,13 @@ public:
     void add_to_runqueue(SchedulingEntity& entity) override
     {
         // TODO: Implement me!
+        UniqueIRQLock l;
+        runqueue.enqueue(&entity);
+        if ((&entity)->priority() == 1) { realtime.enqueue(&entity); }
+        else if ((&entity)->priority() == 2) { interactive.enqueue(&entity); }
+        else if ((&entity)->priority() == 3) { normal.enqueue(&entity); }
+        else if ((&entity)->priority() == 4) { daemon.enqueue(&entity); }
+        else { syslog.messagef(LogLevel::ERROR, "Entity is not of any known priority level"); }
     }
 
     /**
@@ -47,6 +61,13 @@ public:
     void remove_from_runqueue(SchedulingEntity& entity) override
     {
         // TODO: Implement me!
+        UniqueIRQLock l;
+        runqueue.remove(&entity);
+        if ((&entity)->priority() == 1) { realtime.remove(&entity); }
+        else if ((&entity)->priority() == 2) { interactive.remove(&entity); }
+        else if ((&entity)->priority() == 3) { normal.remove(&entity); }
+        else if ((&entity)->priority() == 4) { daemon.remove(&entity); }
+        else { syslog.messagef(LogLevel::ERROR, "Entity is not of any known priority level"); }
     }
 
     /**
@@ -57,6 +78,36 @@ public:
     SchedulingEntity *pick_next_entity() override
     {
         // TODO: Implement me!
+        if (runqueue.empty()) { return nullptr; }
+        else if (!realtime.empty()) 
+        {
+            UniqueIRQLock l;
+            realtime.enqueue(realtime.dequeue());
+            return realtime.last();
+        }
+        else if (!interactive.empty())
+        {
+            UniqueIRQLock l;
+            interactive.enqueue(interactive.dequeue());
+            return interactive.last();
+        }
+        else if (!normal.empty())
+        {
+            UniqueIRQLock l;
+            normal.enqueue(normal.dequeue());
+            return normal.last();
+        }
+        else if (!daemon.empty())
+        {
+            UniqueIRQLock l;
+            daemon.enqueue(daemon.dequeue());
+            return daemon.last();
+        }
+        else 
+        {
+            syslog.messagef(LogLevel::ERROR, "Priority queues are empty");
+            return nullptr;
+        }
     }
 };
 
